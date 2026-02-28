@@ -324,6 +324,7 @@ async fn open_settings_window(app: tauri::AppHandle) {
         .decorations(false)
         .transparent(true)
         .center()
+        .visible(false)
         .build();
 
         if let Ok(w) = window {
@@ -335,6 +336,12 @@ async fn open_settings_window(app: tauri::AppHandle) {
 #[tauri::command]
 fn close_sub_window(window: tauri::Window) {
     let _ = window.close();
+}
+
+#[tauri::command]
+fn show_window(window: tauri::Window) {
+    let _ = window.show();
+    let _ = window.set_focus();
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -371,7 +378,8 @@ pub fn run() {
             close_window,
             get_platform,
             open_settings_window,
-            close_sub_window
+            close_sub_window,
+            show_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

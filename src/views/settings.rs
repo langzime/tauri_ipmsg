@@ -14,9 +14,15 @@ pub fn Settings() -> Element {
     let p = platform.value().cloned().unwrap_or_default();
     let is_macos = p == "macos";
 
+    use_effect(move || {
+        spawn(async move {
+            let _ = invoke_no_args::<()>("show_window").await;
+        });
+    });
+
     rsx! {
         document::Link { rel: "stylesheet", href: SETTINGS_CSS }
-        div { class: "modal-content", style: "width: 100%; height: 100%; border-radius: 10px; overflow: hidden;",
+        div { class: "modal-content",
             div { class: if is_macos { "modal-header macos" } else { "modal-header windows" }, "data-tauri-drag-region": "true",
                 if is_macos {
                     button { class: "close-btn macos", onclick: move |_| {
