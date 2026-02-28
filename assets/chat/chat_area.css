@@ -1,0 +1,79 @@
+#main-panel {
+    display: grid;
+    grid-template-rows: 28px 48px 1fr auto auto;
+    height: 100vh;
+}
+
+.main-header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 16px;
+}
+
+.main-header h2 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.main-header .tools {
+    display: flex;
+    gap: 6px;
+    color: var(--muted);
+}
+
+.main-header .tools button {
+    width: 28px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.main-header .tools button:hover {
+    background: #f0f0f0;
+}
+
+/* Window Controls */
+.topbar {
+    height: 28px;
+    background: var(--panel);
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+.window-controls {
+    display: flex;
+}
+
+.win-btn {
+    width: 40px;
+    height: 24px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-family: "Segoe UI", sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text);
+    transition: background 0.1s;
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+
+.win-btn:hover {
+    background: #e5e5e5;
+}
+
+.win-btn.close:hover {
+    background: #e81123;
+    color: white;
+}

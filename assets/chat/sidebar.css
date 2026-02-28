@@ -1,0 +1,48 @@
+#sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 56px 8px 16px;
+    height: 100vh;
+}
+
+#sidebar .spacer {
+    flex: 1;
+}
+
+#sidebar .settings-btn {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 4px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: all 0.2s;
+}
+
+#sidebar .settings-btn:hover {
+    color: var(--text);
+    background: rgba(0, 0, 0, 0.05);
+}
+
+#sidebar .avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    background: #d1e4ff;
+    display: grid;
+    place-items: center;
+    font-weight: 600;
+    color: #1b3b6f;
+}
+
+#sidebar .icon {
+    font-size: 20px;
+    padding: 6px;
+}
