@@ -332,7 +332,9 @@ pub fn init_state(app_handle: tauri::AppHandle) {
 }
 
 pub fn dispatch_cmd(cmd: StateCmd) {
-    let _ = state_cmd_tx().try_send(cmd);
+    if let Err(e) = state_cmd_tx().try_send(cmd) {
+        log::warn!("Failed to dispatch command: {}", e);
+    }
 }
 
 pub fn list_online_users() -> Vec<OnlineUser> {

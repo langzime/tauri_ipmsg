@@ -128,15 +128,19 @@ async fn download_file(
 ) -> Result<(), String> {
     let from_addr = from.parse().map_err(|e: std::net::AddrParseError| e.to_string())?;
     tauri::async_runtime::spawn(async move {
+        let mut last_update = std::time::Instant::now();
         match ipmsg_core::recv_file(from_addr, packetNo, fileId, size, savePath, |p| {
-            state::dispatch_cmd(StateCmd::UpdateProgress {
-                file_id: fileId,
-                packet_no: packetNo,
-                progress: p,
-                file_name: None,
-                saved: None,
-                error: Some(false),
-            });
+            if last_update.elapsed() > std::time::Duration::from_millis(100) || p == size {
+                state::dispatch_cmd(StateCmd::UpdateProgress {
+                    file_id: fileId,
+                    packet_no: packetNo,
+                    progress: p,
+                    file_name: None,
+                    saved: None,
+                    error: Some(false),
+                });
+                last_update = std::time::Instant::now();
+            }
         })
         .await
         {
@@ -216,15 +220,19 @@ async fn download_folder(
 ) -> Result<(), String> {
     let from_addr = from.parse().map_err(|e: std::net::AddrParseError| e.to_string())?;
     tauri::async_runtime::spawn(async move {
+        let mut last_update = std::time::Instant::now();
         match ipmsg_core::recv_folder(from_addr, packetNo, fileId, savePath, |p, current_file| {
-            state::dispatch_cmd(StateCmd::UpdateProgress {
-                file_id: fileId,
-                packet_no: packetNo,
-                progress: p,
-                file_name: Some(current_file),
-                saved: None,
-                error: Some(false),
-            });
+            if last_update.elapsed() > std::time::Duration::from_millis(100) {
+                state::dispatch_cmd(StateCmd::UpdateProgress {
+                    file_id: fileId,
+                    packet_no: packetNo,
+                    progress: p,
+                    file_name: Some(current_file),
+                    saved: None,
+                    error: Some(false),
+                });
+                last_update = std::time::Instant::now();
+            }
         })
         .await
         {
@@ -335,6 +343,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_decorations(false);
+                }
+            }
             state::init_state(app.handle().clone());
             Ok(())
         })
