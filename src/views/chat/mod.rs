@@ -22,7 +22,7 @@ pub fn Chat() -> Element {
     let mut start_x = use_signal(|| 0f64);
     let mut start_w = use_signal(|| 260i32);
 
-    let mut active_conv = use_signal(|| 0usize);
+    let mut active_conv_addr = use_signal(|| Option::<String>::None);
     
     // Event trigger
     let mut version = use_signal(|| 0u64);
@@ -81,8 +81,39 @@ pub fn Chat() -> Element {
     let self_addr_info = self_resource.cloned().unwrap_or_default();
     let self_addr = self_addr_info.map(|u| u.addr);
 
-    let current = conversations.get(active_conv()).cloned();
+    let current = if let Some(addr) = active_conv_addr() {
+        conversations.iter().find(|c| c.addr.to_string() == addr).cloned()
+    } else {
+        conversations.first().cloned()
+    };
     
+    // Auto select first conversation if none selected (with delay for stability)
+    let conversations_clone = conversations.clone();
+    let mut has_auto_selected = use_signal(|| false);
+    let mut is_stable = use_signal(|| false);
+    let mut timer_started = use_signal(|| false);
+
+    use_effect(move || {
+        // Start timer once
+        if !*timer_started.peek() {
+            timer_started.set(true);
+            spawn(async move {
+                gloo_timers::future::TimeoutFuture::new(500).await;
+                is_stable.set(true);
+            });
+        }
+        
+        // Auto select logic when stable
+        if *is_stable.read() && !*has_auto_selected.peek() {
+            if let Some(first) = conversations_clone.first() {
+                if active_conv_addr.peek().is_none() {
+                    active_conv_addr.set(Some(first.addr.to_string()));
+                }
+                has_auto_selected.set(true);
+            }
+        }
+    });
+
     let view_msgs: Vec<ChatMessage> = if let Some(curr) = &current {
         all_msgs
             .into_iter()
@@ -132,9 +163,9 @@ pub fn Chat() -> Element {
             ConversationList {
                 conversations: conversations,
                 unread_counts: unread_counts,
-                active_idx: active_conv(),
+                active_addr: active_conv_addr(),
                 list_w: list_w,
-                on_select: move |idx| active_conv.set(idx),
+                on_select: move |addr| active_conv_addr.set(Some(addr)),
                 on_resize: move |pos: dioxus::html::geometry::ClientPoint| {
                     dragging.set(true);
                     start_x.set(pos.x);
