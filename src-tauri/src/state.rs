@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tokio::sync::mpsc;
 use tauri::{Emitter, Manager};
+use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct OnlineUser {
@@ -295,7 +296,8 @@ pub fn init_state(app_handle: tauri::AppHandle) {
 
     let handle = app_handle.clone();
     tauri::async_runtime::spawn(async move {
-        tauri::async_runtime::spawn(run_state_manager(rx, handle));
+        let handle_for_manager = handle.clone();
+        tauri::async_runtime::spawn(run_state_manager(rx, handle_for_manager));
 
         match start_ipmsg().await {
             Ok((rx, port)) => {
@@ -326,6 +328,12 @@ pub fn init_state(app_handle: tauri::AppHandle) {
             }
             Err(e) => {
                 println!("UDP 服务启动失败: {}", e);
+                let _ = handle.dialog()
+                    .message(format!("UDP 服务启动失败: {}\n端口 2425 可能被占用。\n请关闭其他占用该端口的程序后重试。", e))
+                    .kind(MessageDialogKind::Error)
+                    .title("启动错误")
+                    .blocking_show();
+                std::process::exit(1);
             }
         }
     });
