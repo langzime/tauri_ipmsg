@@ -300,6 +300,10 @@ pub fn init_state(app_handle: tauri::AppHandle) {
     let (tx, rx) = mpsc::channel(1024);
     let _ = STATE_CMD_TX.set(tx);
 
+    // Load config
+    let config = crate::config::load_config(&app_handle);
+    crate::ipmsg_core::set_user_info(&config.user.username, &config.user.group);
+
     let handle = app_handle.clone();
     tauri::async_runtime::spawn(async move {
         let handle_for_manager = handle.clone();
@@ -310,16 +314,17 @@ pub fn init_state(app_handle: tauri::AppHandle) {
                 let mut ipmsg_rx: tokio::sync::broadcast::Receiver<Event> = rx;
                 
                 // Init self with actual port
-                let self_name = whoami::username();
+                let self_name = config.user.username.clone();
+                let self_group = config.user.group.clone();
                 let self_host = hostname::get()
                     .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_else(|_| "host".into());
+                    .unwrap_or_else(|_| "".into());
                 let self_addr = detect_self_addr(port)
                     .unwrap_or_else(|| SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port));
                     
                 let _ = state_cmd_tx().try_send(StateCmd::InitSelf {
                     user: self_name,
-                    group: "Main".to_string(),
+                    group: self_group,
                     host: self_host,
                     addr: self_addr,
                 });

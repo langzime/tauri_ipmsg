@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -114,35 +114,57 @@ pub enum Event {
 pub struct Service {
     pub socket: Arc<UdpSocket>,
     pub events: broadcast::Sender<Event>,
-    username: String,
-    hostname: String,
-    port: u16,
+    pub port: u16,
 }
 
 static NET_CONFIG: Lazy<Option<(String, Ipv4Addr)>> = Lazy::new(detect_net);
 static MAIN_SOCKET: Lazy<Mutex<Option<Arc<UdpSocket>>>> = Lazy::new(|| Mutex::new(None));
-static BASE_USERNAME: Lazy<String> = Lazy::new(|| whoami::username()); 
-static HOSTNAME: Lazy<String> = Lazy::new(|| hostname::get().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|_| "host".into()));
-static EXT_USERNAME: Lazy<String> = Lazy::new(|| {
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let id = t as u64;
-    format!("{}-<{:016x}>", *BASE_USERNAME, id)
+
+pub struct UserInfo {
+    pub username: String,
+    pub hostname: String,
+    pub group: String,
+}
+
+static USER_INFO: Lazy<RwLock<UserInfo>> = Lazy::new(|| {
+    let username = whoami::username();
+    let hostname = hostname::get().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|_| "host".into());
+    RwLock::new(UserInfo {
+        username,
+        hostname,
+        group: "".to_string(),
+    })
 });
 
-fn build_user_extra(username: &str, hostname: &str) -> String {
+pub fn set_user_info(name: &str, group: &str) {
+    let mut info = USER_INFO.write().unwrap();
+    info.username = name.to_string();
+    info.group = group.to_string();
+}
+
+static EXT_ID_PART: Lazy<String> = Lazy::new(|| {
+    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    format!("{:016x}", t as u64)
+});
+
+fn build_user_extra() -> String {
+    let info = USER_INFO.read().unwrap();
     let mut extra = String::new();
-    extra.push_str(username);
-    extra.push_str("\0\0");
+    extra.push_str(&info.username);
+    extra.push('\0');
+    extra.push_str(&info.group);
+    extra.push('\0');
     extra.push_str("UN:");
-    extra.push_str(&*EXT_USERNAME);
+    extra.push_str(&format!("{}-<{}>", info.username, *EXT_ID_PART));
     extra.push('\0');
     extra.push_str("HN:");
-    extra.push_str(hostname);
+    extra.push_str(&info.hostname);
     extra.push('\0');
     extra.push_str("NN:");
-    extra.push_str(username);
+    extra.push_str(&info.username);
     extra.push('\0');
     extra.push_str("GN:");
+    extra.push_str(&info.group);
     extra.push('\0');
     extra.push_str("VS:00010002:5:7:2");
     extra
@@ -169,18 +191,14 @@ impl Service {
             let mut g = MAIN_SOCKET.lock().unwrap();
             *g = Some(socket.clone());
         }
-        let username = BASE_USERNAME.clone();
-        let hostname = HOSTNAME.clone();
         let (tx, _) = broadcast::channel(64);
-        Ok(Self { socket, events: tx, username, hostname, port })
+        Ok(Self { socket, events: tx, port })
     }
 
     pub async fn spawn(&self) -> Result<()> {
         self.broadcast_entry().await?;
         let socket = self.socket.clone();
         let tx = self.events.clone();
-        let username = self.username.clone();
-        let hostname = self.hostname.clone();
         let port = self.port;
         tokio::spawn(async move {
             let mut buf = [0u8; 8192];
@@ -203,7 +221,7 @@ impl Service {
                                         if addr_allowed(&from) {
                                             let _ = tx.send(Event::Online { user, group, host: p.hostname.clone(), addr: from });
                                         }
-                                        let _ = send_ansentry(&socket, &username, &hostname, from).await;
+                                        let _ = send_ansentry(&socket, from).await;
                                     }
                                     IPMSG_ANSENTRY => {
                                         info!(
@@ -298,10 +316,10 @@ impl Service {
                                             );
                                         }
                                         if need_check {
-                                            let _ = send_recvmsg(&socket, &username, &hostname, p.packet_no, from).await;
+                                            let _ = send_recvmsg(&socket, p.packet_no, from).await;
                                         }
                                         if sealed {
-                                            let _ = send_readmsg(&socket, &username, &hostname, p.packet_no, from).await;
+                                            let _ = send_readmsg(&socket, p.packet_no, from).await;
                                         }
                                     }
                                     IPMSG_RECVMSG => {
@@ -392,12 +410,16 @@ impl Service {
     }
 
     async fn broadcast_entry(&self) -> Result<()> {
-        let extra = build_user_extra(&self.username, &self.hostname);
+        let (username, hostname) = {
+            let info = USER_INFO.read().unwrap();
+            (info.username.clone(), info.hostname.clone())
+        };
+        let extra = build_user_extra();
         let packet = Packet {
             version: VER,
             packet_no: now_millis(),
-            username: BASE_USERNAME.clone(),
-            hostname: self.hostname.clone(),
+            username,
+            hostname,
             command: IPMSG_BR_ENTRY,
             extra,
         };
@@ -412,13 +434,17 @@ fn now_millis() -> u32 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u32
 }
 
-async fn send_ansentry(socket: &UdpSocket, username: &str, hostname: &str, to: SocketAddr) -> Result<()> {
-    let extra = build_user_extra(username, hostname);
+async fn send_ansentry(socket: &UdpSocket, to: SocketAddr) -> Result<()> {
+    let (username, hostname) = {
+        let info = USER_INFO.read().unwrap();
+        (info.username.clone(), info.hostname.clone())
+    };
+    let extra = build_user_extra();
     let packet = Packet {
         version: VER,
         packet_no: now_millis(),
-        username: username.to_string(),
-        hostname: hostname.to_string(),
+        username,
+        hostname,
         command: IPMSG_ANSENTRY,
         extra,
     };
@@ -426,12 +452,16 @@ async fn send_ansentry(socket: &UdpSocket, username: &str, hostname: &str, to: S
     Ok(())
 }
 
-async fn send_recvmsg(socket: &UdpSocket, username: &str, hostname: &str, packet_no: u32, to: SocketAddr) -> Result<()> {
+async fn send_recvmsg(socket: &UdpSocket, packet_no: u32, to: SocketAddr) -> Result<()> {
+    let (username, hostname) = {
+        let info = USER_INFO.read().unwrap();
+        (info.username.clone(), info.hostname.clone())
+    };
     let packet = Packet {
         version: VER,
         packet_no: now_millis(),
-        username: username.to_string(),
-        hostname: hostname.to_string(),
+        username,
+        hostname,
         command: IPMSG_RECVMSG,
         extra: packet_no.to_string(),
     };
@@ -443,12 +473,16 @@ async fn send_recvmsg(socket: &UdpSocket, username: &str, hostname: &str, packet
     Ok(())
 }
 
-async fn send_readmsg(socket: &UdpSocket, username: &str, hostname: &str, packet_no: u32, to: SocketAddr) -> Result<()> {
+async fn send_readmsg(socket: &UdpSocket, packet_no: u32, to: SocketAddr) -> Result<()> {
+    let (username, hostname) = {
+        let info = USER_INFO.read().unwrap();
+        (info.username.clone(), info.hostname.clone())
+    };
     let packet = Packet {
         version: VER,
         packet_no: now_millis(),
-        username: username.to_string(),
-        hostname: hostname.to_string(),
+        username,
+        hostname,
         command: IPMSG_READMSG,
         extra: packet_no.to_string(),
     };
@@ -591,6 +625,31 @@ fn is_virtual_name(name: &str) -> bool {
         || n.contains("hyperv")
 }
 
+pub async fn send_broadcast_entry() -> Result<()> {
+    let socket = {
+        MAIN_SOCKET.lock().unwrap().as_ref().cloned()
+    };
+    if let Some(socket) = socket {
+        let (username, hostname) = {
+            let info = USER_INFO.read().unwrap();
+            (info.username.clone(), info.hostname.clone())
+        };
+        let extra = build_user_extra();
+        let packet = Packet {
+            version: VER,
+            packet_no: now_millis(),
+            username,
+            hostname,
+            command: IPMSG_BR_ENTRY,
+            extra,
+        };
+        let addr = broadcast_target();
+        socket.send_to(&packet.encode(), addr).await?;
+        info!("BR_ENTRY sent id={} to {}", packet.packet_no, addr);
+    }
+    Ok(())
+}
+
 pub async fn send_exit() -> Result<()> {
     let socket = {
         MAIN_SOCKET.lock().unwrap().as_ref().cloned()
@@ -606,9 +665,11 @@ pub async fn send_exit() -> Result<()> {
         raw.set_broadcast(true)?;
         Arc::new(raw)
     };
-    let username = BASE_USERNAME.clone();
-    let hostname = HOSTNAME.clone();
-    let extra = build_user_extra(&username, &hostname);
+    let (username, hostname) = {
+        let info = USER_INFO.read().unwrap();
+        (info.username.clone(), info.hostname.clone())
+    };
+    let extra = build_user_extra();
     let packet = Packet {
         version: VER,
         packet_no: now_millis(),
@@ -638,9 +699,11 @@ pub async fn send_exit_to(to: SocketAddr) -> Result<()> {
         raw.set_broadcast(true)?;
         Arc::new(raw)
     };
-    let username = BASE_USERNAME.clone();
-    let hostname = HOSTNAME.clone();
-    let extra = build_user_extra(&username, &hostname);
+    let (username, hostname) = {
+        let info = USER_INFO.read().unwrap();
+        (info.username.clone(), info.hostname.clone())
+    };
+    let extra = build_user_extra();
     let packet = Packet {
         version: VER,
         packet_no: now_millis(),
@@ -669,8 +732,10 @@ pub async fn send_message(to: SocketAddr, text: String) -> Result<()> {
         raw.set_broadcast(true)?;
         Arc::new(raw)
     };
-    let username = BASE_USERNAME.clone();
-    let hostname = HOSTNAME.clone();
+    let (username, hostname) = {
+        let info = USER_INFO.read().unwrap();
+        (info.username.clone(), info.hostname.clone())
+    };
     let packet = Packet {
         version: VER,
         packet_no: now_millis(),
@@ -702,8 +767,10 @@ pub async fn send_file(to: SocketAddr, path: String) -> Result<()> {
         raw.set_broadcast(true)?;
         Arc::new(raw)
     };
-    let username = BASE_USERNAME.clone();
-    let hostname = HOSTNAME.clone();
+    let (username, hostname) = {
+        let info = USER_INFO.read().unwrap();
+        (info.username.clone(), info.hostname.clone())
+    };
     let meta = fs::metadata(&path).await?;
     let file_size = meta.len();
     let mtime = meta
@@ -773,8 +840,10 @@ pub async fn send_files(to: SocketAddr, paths: Vec<String>) -> Result<()> {
         raw.set_broadcast(true)?;
         Arc::new(raw)
     };
-    let username = BASE_USERNAME.clone();
-    let hostname = HOSTNAME.clone();
+    let (username, hostname) = {
+        let info = USER_INFO.read().unwrap();
+        (info.username.clone(), info.hostname.clone())
+    };
 
     let mut valid_files = Vec::new();
     for path in paths {
@@ -872,8 +941,10 @@ pub async fn send_folder(to: SocketAddr, dir: String) -> Result<()> {
         raw.set_broadcast(true)?;
         Arc::new(raw)
     };
-    let username = BASE_USERNAME.clone();
-    let hostname = HOSTNAME.clone();
+    let (username, hostname) = {
+        let info = USER_INFO.read().unwrap();
+        (info.username.clone(), info.hostname.clone())
+    };
     let meta = fs::metadata(&dir).await?;
     if !meta.is_dir() {
         return Err(anyhow!("send_folder path is not directory"));
@@ -944,8 +1015,10 @@ where
     F: FnMut(u64),
 {
     let mut stream = TcpStream::connect(from).await?;
-    let username = BASE_USERNAME.clone();
-    let hostname = HOSTNAME.clone();
+    let (username, hostname) = {
+        let info = USER_INFO.read().unwrap();
+        (info.username.clone(), info.hostname.clone())
+    };
     let extra = if use_hex {
         format!("{:x}:{:x}:0", packet_no, file_id)
     } else {
@@ -1027,8 +1100,10 @@ where
 {
     info!("recv_folder start from {} packet_no={} file_id={}", from, packet_no, file_id);
     let mut stream = TcpStream::connect(from).await?;
-    let username = BASE_USERNAME.clone();
-    let hostname = HOSTNAME.clone();
+    let (username, hostname) = {
+        let info = USER_INFO.read().unwrap();
+        (info.username.clone(), info.hostname.clone())
+    };
     // For folder, extra format is packet_no:file_id:0 (same as file?)
     // Actually spec says just packet_no:file_id. The 3rd field is offset, usually 0.
     let extra = format!("{:x}:{:x}:0", packet_no, file_id);

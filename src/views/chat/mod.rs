@@ -71,6 +71,7 @@ pub fn Chat() -> Element {
     });
 
     let self_resource = use_resource(move || async move {
+        let _ = version(); // dependency
         invoke_no_args::<Option<OnlineUser>>("get_self").await.unwrap_or_default()
     });
 
@@ -79,7 +80,7 @@ pub fn Chat() -> Element {
     let all_msgs = messages_resource.cloned().unwrap_or_default();
     let unread_counts = unread_counts_resource.cloned().unwrap_or_default();
     let self_addr_info = self_resource.cloned().unwrap_or_default();
-    let self_addr = self_addr_info.map(|u| u.addr);
+    let self_addr = self_addr_info.as_ref().map(|u| u.addr);
 
     let current = if let Some(addr) = active_conv_addr() {
         conversations.iter().find(|c| c.addr.to_string() == addr).cloned()
@@ -153,6 +154,7 @@ pub fn Chat() -> Element {
                 dragging.set(false);
             },
             Sidebar {
+                user: self_addr_info,
                 on_settings_click: move |_| {
                     spawn(async move {
                         let _ = invoke_no_args::<()>("open_settings_window").await;

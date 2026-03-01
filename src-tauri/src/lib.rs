@@ -1,6 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod ipmsg_core;
 mod state;
+mod config;
 
 use log::{info, error};
 use std::net::SocketAddr;
@@ -319,7 +320,7 @@ async fn open_settings_window(app: tauri::AppHandle) {
             tauri::WebviewUrl::App("/settings".into()),
         )
         .title("设置")
-        .inner_size(400.0, 600.0)
+        .inner_size(400.0, 350.0)
         .resizable(false)
         .decorations(false)
         .transparent(true)
@@ -342,6 +343,38 @@ fn close_sub_window(window: tauri::Window) {
 fn show_window(window: tauri::Window) {
     let _ = window.show();
     let _ = window.set_focus();
+}
+
+#[tauri::command]
+fn get_config(app: tauri::AppHandle) -> config::AppConfig {
+    config::load_config(&app)
+}
+
+#[tauri::command]
+async fn save_settings(app: tauri::AppHandle, username: String, group: String) -> Result<(), String> {
+    let mut config = config::load_config(&app);
+    config.user.username = username.clone();
+    config.user.group = group.clone();
+    
+    if let Err(e) = config::save_config(&config, &app) {
+        return Err(e.to_string());
+    }
+    
+    // Update core
+    ipmsg_core::set_user_info(&username, &group);
+    let _ = ipmsg_core::send_broadcast_entry().await;
+    
+    // Update state
+    if let Some(me) = state::get_self_addr_info() {
+        state::dispatch_cmd(StateCmd::InitSelf {
+            user: username,
+            group: group,
+            host: me.host,
+            addr: me.addr,
+        });
+    }
+    
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -379,7 +412,9 @@ pub fn run() {
             get_platform,
             open_settings_window,
             close_sub_window,
-            show_window
+            show_window,
+            get_config,
+            save_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
