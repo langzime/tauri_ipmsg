@@ -6,3 +6,5 @@ This template should help get you started developing with Tauri and Dioxus.
 
 [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer) + [Dioxus](https://marketplace.visualstudio.com/items?itemName=DioxusLabs.dioxus).
 # tauri_ipmsg
+
+##窗口权限可以分开配置，也可以在一个文件中配置
