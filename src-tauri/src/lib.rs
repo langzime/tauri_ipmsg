@@ -9,6 +9,9 @@ use state::{ChatMessage, OnlineUser, StateCmd, FileInfo};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tauri::Manager;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 #[tauri::command]
 fn get_unread_counts() -> HashMap<SocketAddr, u32> {
@@ -273,7 +276,7 @@ async fn pick_files(app: tauri::AppHandle) -> Vec<String> {
     }
 }
 
-use tauri_plugin_dialog::DialogExt;
+
 
 #[tauri::command]
 #[allow(non_snake_case)]
@@ -389,8 +392,74 @@ pub fn run() {
                     let _ = window.set_decorations(false);
                 }
             }
+
+            let quit_i = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+            let show_i = MenuItem::with_id(app, "show", "显示", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+
+            let mut builder = TrayIconBuilder::new()
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                });
+
+            if let Some(icon) = app.default_window_icon() {
+                builder = builder.icon(icon.clone());
+            }
+
+            builder.build(app)?;
+
             state::init_state(app.handle().clone());
             Ok(())
+        })
+        .on_window_event(|window, event| {
+             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let window = window.clone();
+                if window.label() == "main" {
+                    api.prevent_close();
+                    
+                    let app_handle = window.app_handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                         let answer = window.dialog()
+                            .message("最小化还是退出?")
+                            .title("关闭")
+                            .buttons(MessageDialogButtons::OkCancelCustom("退出".to_string(), "最小化".to_string()))
+                            .blocking_show();
+                            
+                        if answer {
+                            let _ = ipmsg_core::send_exit().await;
+                            app_handle.exit(0);
+                        } else {
+                            let _ = window.hide();
+                        }
+                    });
+                }
+             }
         })
         .invoke_handler(tauri::generate_handler![
             list_users,
