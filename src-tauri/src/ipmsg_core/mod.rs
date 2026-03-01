@@ -74,21 +74,28 @@ fn split_extra(extra: &str) -> (String, Vec<String>) {
     (main, rest)
 }
 
-fn entry_display_name(username: &str, extra: &str) -> String {
-    // Split by null character and take the first part
-    let first = extra.split('\0').next().unwrap_or("");
-    let cleaned: String = first.chars().filter(|c| !c.is_control()).collect();
-    let cleaned = cleaned.trim();
-    if !cleaned.is_empty() {
-        cleaned.to_string()
+fn parse_entry_extra(username: &str, extra: &str) -> (String, String) {
+    let mut iter = extra.split('\0');
+    let nick = iter.next().unwrap_or("");
+    let group = iter.next().unwrap_or("");
+    
+    let clean_nick: String = nick.chars().filter(|c| !c.is_control()).collect();
+    let clean_nick = clean_nick.trim();
+    let final_nick = if !clean_nick.is_empty() {
+        clean_nick.to_string()
     } else {
         username.to_string()
-    }
+    };
+
+    let clean_group: String = group.chars().filter(|c| !c.is_control()).collect();
+    let final_group = clean_group.trim().to_string();
+    
+    (final_nick, final_group)
 }
 
 #[derive(Debug, Clone)]
 pub enum Event {
-    Online { user: String, host: String, addr: SocketAddr },
+    Online { user: String, group: String, host: String, addr: SocketAddr },
     Offline { user: String, host: String, addr: SocketAddr },
     Message { from: SocketAddr, user: String, host: String, text: String },
     FileOffer {
@@ -192,9 +199,9 @@ impl Service {
                                             "recv BR_ENTRY id={} from {}@{} ({}) extra='{:?}'",
                                             p.packet_no, p.username, p.hostname, from, p.extra
                                         );
-                                        let disp_name = entry_display_name(&p.username, &p.extra);
+                                        let (user, group) = parse_entry_extra(&p.username, &p.extra);
                                         if addr_allowed(&from) {
-                                            let _ = tx.send(Event::Online { user: disp_name, host: p.hostname.clone(), addr: from });
+                                            let _ = tx.send(Event::Online { user, group, host: p.hostname.clone(), addr: from });
                                         }
                                         let _ = send_ansentry(&socket, &username, &hostname, from).await;
                                     }
@@ -203,9 +210,9 @@ impl Service {
                                             "recv ANSENTRY id={} from {}@{} ({}) extra='{:?}'",
                                             p.packet_no, p.username, p.hostname, from, p.extra
                                         );
-                                        let disp_name = entry_display_name(&p.username, &p.extra);
+                                        let (user, group) = parse_entry_extra(&p.username, &p.extra);
                                         if addr_allowed(&from) {
-                                            let _ = tx.send(Event::Online { user: disp_name, host: p.hostname.clone(), addr: from });
+                                            let _ = tx.send(Event::Online { user, group, host: p.hostname.clone(), addr: from });
                                         }
                                     }
                                     IPMSG_BR_EXIT => {

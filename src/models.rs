@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct OnlineUser {
     pub name: String,
+    pub group: String,
     pub host: String,
     pub addr: SocketAddr,
 }

@@ -13,6 +13,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 #[derive(Clone, Serialize, Deserialize)]
 pub struct OnlineUser {
     pub name: String,
+    pub group: String,
     pub host: String,
     pub addr: SocketAddr,
 }
@@ -81,6 +82,7 @@ fn default_self_addr() -> SocketAddr {
 pub enum StateCmd {
     InitSelf {
         user: String,
+        group: String,
         host: String,
         addr: SocketAddr,
     },
@@ -113,13 +115,14 @@ pub async fn run_state_manager(mut rx: mpsc::Receiver<StateCmd>, app_handle: tau
     while let Some(cmd) = rx.recv().await {
         let mut changed = false;
         match cmd {
-            StateCmd::InitSelf { user, host, addr } => {
+            StateCmd::InitSelf { user, group, host, addr } => {
                 let addr_norm = normalize_addr(addr);
                 state.self_addr = Some(addr_norm);
                 state.online_users.insert(
                     addr_norm,
                     OnlineUser {
                         name: user,
+                        group,
                         host,
                         addr: addr_norm,
                     },
@@ -127,7 +130,7 @@ pub async fn run_state_manager(mut rx: mpsc::Receiver<StateCmd>, app_handle: tau
                 changed = true;
             }
             StateCmd::ApplyEvent(ev) => match ev {
-                Event::Online { user, host, addr } => {
+                Event::Online { user, group, host, addr } => {
                     let addr_norm = normalize_addr(addr);
                     if Some(addr_norm) == state.self_addr {
                         // ignore self
@@ -136,6 +139,7 @@ pub async fn run_state_manager(mut rx: mpsc::Receiver<StateCmd>, app_handle: tau
                             addr_norm,
                             OnlineUser {
                                 name: user,
+                                group,
                                 host,
                                 addr: addr_norm,
                             },
@@ -167,6 +171,7 @@ pub async fn run_state_manager(mut rx: mpsc::Receiver<StateCmd>, app_handle: tau
                     });
                     state.online_users.entry(from_norm).or_insert(OnlineUser {
                         name: user,
+                        group: String::new(),
                         host,
                         addr: from_norm,
                     });
@@ -211,6 +216,7 @@ pub async fn run_state_manager(mut rx: mpsc::Receiver<StateCmd>, app_handle: tau
                     });
                     state.online_users.entry(from_norm).or_insert(OnlineUser {
                         name: user,
+                        group: String::new(),
                         host,
                         addr: from_norm,
                     });
@@ -313,6 +319,7 @@ pub fn init_state(app_handle: tauri::AppHandle) {
                     
                 let _ = state_cmd_tx().try_send(StateCmd::InitSelf {
                     user: self_name,
+                    group: "Main".to_string(),
                     host: self_host,
                     addr: self_addr,
                 });

@@ -75,7 +75,15 @@ pub fn ConversationList(
                                         span { class: "time", "" }
                                     }
                                     div { class: "bottom",
-                                        span { class: "preview", {conv.host.clone()} }
+                                        span { class: "preview",
+                                            {
+                                                if conv.group.is_empty() {
+                                                    conv.host.clone()
+                                                } else {
+                                                    format!("{} - {}", conv.group, conv.host)
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
