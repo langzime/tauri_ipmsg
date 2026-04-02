@@ -1,4 +1,6 @@
 use dioxus::prelude::*;
+use dioxus_free_icons::Icon;
+use dioxus_free_icons::icons::fa_solid_icons::{FaMinus, FaWindowMaximize, FaXmark};
 use crate::models::{ChatMessage, OnlineUser};
 use crate::tauri::{invoke_no_args, listen};
 use std::collections::HashMap;
@@ -139,7 +141,7 @@ pub fn Chat() -> Element {
 
         div {
             id: "chat-app",
-            style: format!("grid-template-columns: {}px {}px 1fr", 64, list_w()),
+            style: format!("grid-template-columns: {}px 1fr", 64),
             onmousemove: move |ev| {
                 if dragging() {
                     let current_x = ev.client_coordinates().x;
@@ -162,22 +164,39 @@ pub fn Chat() -> Element {
                 }
             }
 
-            ConversationList {
-                conversations: conversations,
-                unread_counts: unread_counts,
-                active_addr: active_conv_addr(),
-                list_w: list_w,
-                on_select: move |addr| active_conv_addr.set(Some(addr)),
-                on_resize: move |pos: dioxus::html::geometry::ClientPoint| {
-                    dragging.set(true);
-                    start_x.set(pos.x);
-                    start_w.set(list_w());
+            div {
+                id: "content",
+                style: "display: grid; grid-template-rows: 28px 1fr; height: 100vh;",
+                div { class: "topbar",
+                    "data-tauri-drag-region": "true",
+                    div { class: "window-controls",
+                        button { class: "win-btn min", onclick: |_| { spawn(async move { let _ = invoke_no_args::<()>("minimize_window").await; }); }, Icon { width: 12, height: 12, icon: FaMinus } }
+                        button { class: "win-btn max", onclick: |_| { spawn(async move { let _ = invoke_no_args::<()>("maximize_window").await; }); }, Icon { width: 12, height: 12, icon: FaWindowMaximize } }
+                        button { class: "win-btn close", onclick: |_| { spawn(async move { let _ = invoke_no_args::<()>("close_window").await; }); }, Icon { width: 12, height: 12, icon: FaXmark } }
+                    }
                 }
-            }
-
-            ChatArea {
-                current: current,
-                messages: view_msgs
+                div {
+                    id: "content-body",
+                    style: format!("display: grid; grid-template-columns: {}px 1fr;", list_w()),
+                    ConversationList {
+                        conversations: conversations,
+                        unread_counts: unread_counts,
+                        active_addr: active_conv_addr(),
+                        list_w: list_w,
+                        on_select: move |addr| active_conv_addr.set(Some(addr)),
+                        on_resize: move |pos: dioxus::html::geometry::ClientPoint| {
+                            dragging.set(true);
+                            start_x.set(pos.x);
+                            start_w.set(list_w());
+                        }
+                    }
+                    ChatArea {
+                        current: current,
+                        messages: view_msgs,
+                        show_header: false,
+                        show_topbar: false
+                    }
+                }
             }
         }
     }

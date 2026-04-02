@@ -30,10 +30,10 @@ pub fn ConversationList(
                     on_resize.call(ev.client_coordinates());
                 }
             }
-            div {
-                class: "list-topbar",
-                "data-tauri-drag-region": "true",
-             }
+            // div {
+            //     class: "list-topbar",
+            //     "data-tauri-drag-region": "true",
+            //  }
             div { class: "list-header",
                 input {
                     r#type: "text",

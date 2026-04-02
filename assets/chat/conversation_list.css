@@ -11,7 +11,7 @@
     right: -2px;
     top: 0;
     bottom: 0;
-    width: 4px;
+    width: 3px;
     cursor: col-resize;
     z-index: 100;
 }
@@ -51,6 +51,7 @@
 }
 
 .conv-list {
+    background: var(--panel);
     overflow-y: auto;
     overflow-x: hidden;
     flex: 1;

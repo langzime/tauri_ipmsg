@@ -12,6 +12,8 @@ const CHAT_AREA_CSS: Asset = asset!("/assets/chat/chat_area.css");
 pub fn ChatArea(
     current: Option<OnlineUser>,
     messages: Vec<ChatMessage>,
+    #[props(default = true)] show_header: bool,
+    #[props(default = true)] show_topbar: bool,
 ) -> Element {
     let platform_resource = use_resource(move || async move {
         invoke_no_args::<String>("get_platform").await.unwrap_or_else(|_| "unknown".to_string())
@@ -21,34 +23,39 @@ pub fn ChatArea(
     rsx! {
         document::Link { rel: "stylesheet", href: CHAT_AREA_CSS }
         div { id: "main-panel",
-            div { class: "topbar",
-                "data-tauri-drag-region": "true",
-                {
-                    if show_controls {
-                        rsx! {
-                            div { class: "window-controls",
-                                button { class: "win-btn min", onclick: |_| { spawn(async move { let _ = invoke_no_args::<()>("minimize_window").await; }); }, Icon { width: 12, height: 12, icon: FaMinus } }
-                                button { class: "win-btn max", onclick: |_| { spawn(async move { let _ = invoke_no_args::<()>("maximize_window").await; }); }, Icon { width: 12, height: 12, icon: FaWindowMaximize } }
-                                button { class: "win-btn close", onclick: |_| { spawn(async move { let _ = invoke_no_args::<()>("close_window").await; }); }, Icon { width: 12, height: 12, icon: FaXmark } }
+            {
+                if show_topbar {
+                    rsx! {
+                        div { class: "topbar",
+                            "data-tauri-drag-region": "true",
+                            {
+                                if show_controls {
+                                    rsx! {
+                                        div { class: "window-controls",
+                                            button { class: "win-btn min", onclick: |_| { spawn(async move { let _ = invoke_no_args::<()>("minimize_window").await; }); }, Icon { width: 12, height: 12, icon: FaMinus } }
+                                            button { class: "win-btn max", onclick: |_| { spawn(async move { let _ = invoke_no_args::<()>("maximize_window").await; }); }, Icon { width: 12, height: 12, icon: FaWindowMaximize } }
+                                            button { class: "win-btn close", onclick: |_| { spawn(async move { let _ = invoke_no_args::<()>("close_window").await; }); }, Icon { width: 12, height: 12, icon: FaXmark } }
+                                        }
+                                    }
+                                } else { rsx!({}) }
                             }
                         }
-                    } else {
-                        rsx!({})
                     }
-                }
+                } else { rsx!({}) }
             }
-            div { class: "main-header",
-                "data-tauri-drag-region": "true",
-                h2 { {current.as_ref().map(|c| c.host.clone()).unwrap_or_else(|| "会话".into())} }
-                div { class: "tools", span { Icon { width: 20, height: 20, icon: FaEllipsis } } }
+            {
+                if show_header {
+                    rsx! {
+                        div { class: "main-header",
+                            "data-tauri-drag-region": "true",
+                            h2 { {current.as_ref().map(|c| c.host.clone()).unwrap_or_else(|| "会话".into())} }
+                            div { class: "tools", span { Icon { width: 20, height: 20, icon: FaEllipsis } } }
+                        }
+                    }
+                } else { rsx!({}) }
             }
-            MessageList {
-                current: current.clone(),
-                messages: messages
-            }
-            InputArea {
-                current: current.clone()
-            }
+            MessageList { current: current.clone(), messages: messages }
+            InputArea { current: current.clone() }
         }
     }
 }

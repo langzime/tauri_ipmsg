@@ -390,6 +390,11 @@ pub fn run() {
             {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.set_decorations(false);
+                    #[allow(unused_imports)]
+                    {
+                        use window_vibrancy::apply_acrylic;
+                        let _ = apply_acrylic(&window, Some((255, 255, 255, 200)));
+                    }
                 }
             }
 
